@@ -22,13 +22,13 @@ from llm_common import utils as llmu
 
 class ControllerBase(ERobot, ABC):
 
-    IIWA_MAX_ANGLE_SPEED = 0.6 * pi  # rad/s
+    IIWA_MAX_ANGLE_SPEED = 0.1 * pi  # rad/s
     IIWA_MAX_TORQUE = 300  # Nm
 
-    ALLEGRO_MAX_ANGLE_SPEED = 0.2 * pi  # rad/s
-    ALLEGRO_MAX_TORQUE = 15  # Nm
+    ALLEGRO_MAX_ANGLE_SPEED = pi  # rad/s
+    ALLEGRO_MAX_TORQUE = 2  # Nm
 
-    TIMEOUT = 300  # s
+    TIMEOUT = 180  # s
 
     @staticmethod
     def clean_up(signum, frame):
@@ -117,8 +117,9 @@ class ControllerBase(ERobot, ABC):
         self._iiwa_js_sub = rospy.Subscriber(llmu.IIWA_JOINT_STATES_TOPIC, JointState, self._iiwa_joint_state_cb)
         self._allegro_js_sub = rospy.Subscriber(llmu.ALLEGRO_JOINT_STATES_TOPIC, JointState, self._allegro_joint_state_cb)
         self._iiwa_torque_pub = rospy.Publisher(llmu.IIWA_TORQUE_CMD_TOPIC, Float64MultiArray, queue_size=10)
-        self._allegro_torque_pub = rospy.Publisher(llmu.ALLEGRO_TORQUE_CMD_TOPIC, Float64MultiArray, queue_size=10)
+        self._allegro_torque_pub = rospy.Publisher(llmu.ALLEGRO_TORQUE_CMD_TOPIC, JointState, queue_size=10)
         self._joint_setter_pub = rospy.Publisher(llmu.JOINT_SETTER_TOPIC, Float64MultiArray, queue_size=10)
+        self._iiwa_position_pub = rospy.Publisher(llmu.IIWA_POSITION_CMD_TOPIC, Float64MultiArray, queue_size=10)
 
         # Init service
         rospy.wait_for_service('inertia')
@@ -339,20 +340,23 @@ class ControllerBase(ERobot, ABC):
 
     def _send_allegro_torque(self, torques: np.ndarray) -> None:
 
-        allegro_torque_cmd = Float64MultiArray()
+        allegro_torque_cmd = JointState()
 
         # Fill out layout information
-        layout = MultiArrayLayout()
-        layout.dim.append(MultiArrayDimension())
-        layout.data_offset = 0
-        layout.dim[0].size = len(torques)
-        layout.dim[0].stride = 1
-        layout.dim[0].label = "joints"
-        allegro_torque_cmd.layout = layout
+        # layout = MultiArrayLayout()
+        # layout.dim.append(MultiArrayDimension())
+        # layout.data_offset = 0
+        # layout.dim[0].size = len(torques)
+        # layout.dim[0].stride = 1
+        # layout.dim[0].label = "joints"
+        # allegro_torque_cmd.layout = layout
 
         # Fill torques
         # grav_torque = self.gravload(self.x_iiwa+self.x_allegro)
-        allegro_torque_cmd.data = torques # + grav_torque[7:]
+        # allegro_torque_cmd.data = torques # + grav_torque[7:]
+        # allegro_torque_cmd.position = self.x_allegro
+        # allegro_torque_cmd.velocity = self.xd_allegro
+        allegro_torque_cmd.effort = torques
 
         # Send
         self._allegro_torque_pub.publish(allegro_torque_cmd)
@@ -379,6 +383,29 @@ class ControllerBase(ERobot, ABC):
 
         # Send
         self._iiwa_torque_pub.publish(iiwa_torque_cmd)
+
+    def _send_iiwa_position(self, position: np.ndarray) -> None:
+
+        iiwa_pos_cmd = Float64MultiArray()
+
+        # Fill out layout information
+        layout = MultiArrayLayout()
+        layout.dim.append(MultiArrayDimension())
+        layout.data_offset = 0
+        layout.dim[0].size = len(position)
+        layout.dim[0].stride = 1
+        layout.dim[0].label = "joints"
+        iiwa_pos_cmd.layout = layout
+
+        # Fill torques
+        # import time
+        # tic = time.time()
+        # grav_torque = self.gravload(self.x_iiwa+self.x_allegro)
+        iiwa_pos_cmd.data = position # + grav_torque[:7]
+        # print(time.time() - tic)
+
+        # Send
+        self._iiwa_position_pub.publish(iiwa_pos_cmd)
 
     def _set_robot_joints(self, joints: np.ndarray) -> None:
         joints_msg = Float64MultiArray()
@@ -408,7 +435,10 @@ class ControllerBase(ERobot, ABC):
                 qz[i] = self.qlim[0, i] + (self.qlim[1, i] - self.qlim[0, i])/2
 
         # Fix first thumb joint in a better grasping pose
-        qz[self._n_rbt+12] = self.qlim[1][self._n_rbt+12]
-        qz[self._n_rbt+14] += 0.3
+        qz[self._n_rbt+12] = self.qlim[1][self._n_rbt+12] + 0.5
+        qz[self._n_rbt+12] = self.qlim[1][self._n_rbt+12] + 0.5
+        qz[self._n_rbt + 1] = self.qlim[1][self._n_rbt + 1] + 0.5
+        qz[self._n_rbt+11] = self.qlim[1][self._n_rbt+11]
+        #qz[self._n_rbt+14] += 0.3
 
         self.addconfiguration('qz', qz)

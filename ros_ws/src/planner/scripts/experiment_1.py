@@ -54,7 +54,7 @@ locations = [
     "storage shelf"
 ]
 
-obj_to_clear = "empty glass 1"
+obj_to_clear = 'whole apple'
 task = f"Put away the {obj_to_clear} efficiently and quickly"
 
 iter = 1

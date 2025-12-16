@@ -25,14 +25,14 @@ scene_description = (
 # Labels that are considered objects which a robot may interact with
 objects = [
     "white table",
-    # "crumpled paper ball 1",
-    # "crumpled paper ball 2",
+    "crumpled paper ball 1",
+    "crumpled paper ball 2",
     #"crumpled paper ball 3",
     #"crumpled paper ball 4",
     #"crumpled paper ball 5",
-    # "whole apple",
+    "whole apple",
     "half-eaten apple",
-    # "empty glass 1",
+    "empty glass 1",
     #"empty glass 2",
     "glass with yellowish liquid",
     "large red trash can",
@@ -59,7 +59,7 @@ task = "put away the 'half-eaten apple' and the 'glass with yellowish liquid'"
 
 iter = 1
 retune_count = 3
-replan_count = 4
+replan_count = 7
 
 log_folder = ""
 
@@ -300,7 +300,7 @@ def execute_and_log_plans(task_plan: tp.List, evaluation_plan: tp.List, tpu: Tas
 
 def plan_and_retune(parameter_history, domain_history, warm_start=False):
     global log_folder
-    log_folder = create_experiment_log("exp_2_2_07_N")
+    log_folder = create_experiment_log("exp_2_0")
     chat_log_file = os.path.join(log_folder, 'chat_log.pckl')
     task_plan_meta_data_file = os.path.join(log_folder, 'task_plan_log.pkl')
     llm_bot = GptChatBot(auto_save_file_name=chat_log_file)
@@ -383,15 +383,8 @@ def plan_and_retune(parameter_history, domain_history, warm_start=False):
 
 if __name__ == "__main__":
     rospy.init_node("llm_planner")
-    results = []
     for _ in range(10):
         iter = 1
-        parameter_history = {'success': {}, 'failure': {}}
+        parameter_history = parameter_history = {'success': {}, 'failure': {}}
         domain_history = None
-        success = False
-        # try:
         success, parameter_history, domain_history =  plan_and_retune(parameter_history, domain_history, warm_start=False)
-        # except:
-        #     success = False
-        results.append(success)
-        print("================RESULTS: ", results)

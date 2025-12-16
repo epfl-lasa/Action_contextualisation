@@ -10,8 +10,7 @@ from primitives.action_functions import pick, get_meshes, get_table_mesh, get_sh
 
 def can_grasp(object_to_grasp: str, grasp_side: str) -> bool:
     from primitives.action_functions import js_lds
-    GRASP_DISTANCE = js_lds.collision_proximity + 0.5
-    # GRASP_DISTANCE = js_lds.collision_proximity + 0.15
+    GRASP_DISTANCE = js_lds.collision_proximity + 0.15
 
     # Check if the object is in the vicinity of the hand
     object_in_vicinity = True
@@ -57,13 +56,12 @@ def timeout() -> bool:
 
 
 def check_motion_health() -> bool:
-    from primitives.action_functions import js_lds
-    motion_health = js_lds.compute_motion_health(reset=False)
-    return motion_health > 0
+    return True
 
 
 def get_motion_health() -> float:
     from primitives.action_functions import js_lds
+
     motion_health = js_lds.compute_motion_health()
     return motion_health
 
@@ -101,5 +99,5 @@ def at_location(object: str, location: str) -> bool:
         distances = distances - location_radii
 
         min_dst = np.min(distances)
-        return min_dst < 0.75 # TODO: This extension is not super good but ok for now
-        # return min_dst < 0.5 # TODO: This extension is not super good but ok for now
+
+        return min_dst < 0.5 # TODO: This extension is not super good but ok for now

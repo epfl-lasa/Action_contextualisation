@@ -47,16 +47,16 @@ RUN sudo apt-get update && sudo apt-get install -y \
     && sudo apt-get upgrade -y && sudo apt-get clean
 
 # Install gazebo (9 or 11 depending on distro)
-# WORKDIR /home/${USER}
-# RUN sudo apt-get update
-# RUN if [ "$ROS_DISTRO" = "noetic" ] ; \
-#         then sudo apt-get install -y gazebo11 ; fi
-# RUN if [ "$ROS_DISTRO" = "melodic" ] ; \
-#         then sudo apt-get install -y gazebo9 ; fi
+WORKDIR /home/${USER}
+RUN sudo apt-get update
+RUN if [ "$ROS_DISTRO" = "noetic" ] ; \
+        then sudo apt-get install -y gazebo11 ; fi
+RUN if [ "$ROS_DISTRO" = "melodic" ] ; \
+        then sudo apt-get install -y gazebo9 ; fi
 
-# # Install gaezbo ros packages
-# RUN sudo apt install -y ros-${ROS_DISTRO}-gazebo-ros-pkgs \
-#                         ros-${ROS_DISTRO}-gazebo-ros-control
+# Install gaezbo ros packages
+RUN sudo apt install -y ros-${ROS_DISTRO}-gazebo-ros-pkgs \
+                        ros-${ROS_DISTRO}-gazebo-ros-control
 
 # Handle SIMD option
 RUN if [ "${USE_SIMD}" = "ON" ] ; \
@@ -144,11 +144,7 @@ RUN pip install mujoco \
                 pyembree \
                 openai \
                 pddl \
-                pyVHACD \
-                mistralai
-
-
-RUN sudo apt install python3-rosdep
+                pyVHACD
 
 # Install Pinocchio
 RUN sudo apt install -qqy lsb-release curl
@@ -169,10 +165,9 @@ RUN git clone https://github.com/niederha/robotics-toolbox-python.git && pip ins
 
 ### Build ros workspace
 WORKDIR /home/${USER}/ros_ws
-# Calling these 2 manually
-# RUN source /home/${USER}/.bashrc && rosdep install --from-paths src --ignore-src -r -y
-# RUN source /home/${USER}/.bashrc && catkin_make
-
+RUN source /home/${USER}/.bashrc && rosdep install --from-paths src --ignore-src -r -y
+RUN source /home/${USER}/.bashrc && catkin_make;
+RUN sudo apt-get install ros-${ROS_DISTRO}-vrpn-client-ros
 # For some reason we need a more recencent version of numpy
 RUN pip install --upgrade numpy==1.23
 
@@ -184,8 +179,8 @@ RUN sudo apt update
 # RUN sudo apt install nvidia-driver-545 -y
 # RUN sudo ubuntu-drivers install
 # NVIDIA driver argument
-ARG nvidia_binary_version="535.159.05"
-ARG nvidia_binary="NVIDIA-Linux-x86_64-${nvidia_binary_version}.run"
+# ARG nvidia_binary_version="535.159.05"
+# ARG nvidia_binary="NVIDIA-Linux-x86_64-${nvidia_binary_version}.run"
 
 
 # RUN wget -q https://us.download.nvidia.com/XFree86/Linux-x86_64/${nvidia_binary_version}/${nvidia_binary} \
@@ -197,3 +192,8 @@ ARG nvidia_binary="NVIDIA-Linux-x86_64-${nvidia_binary_version}.run"
 RUN sudo apt update -y
 RUN sudo apt upgrade -y
 RUN sudo apt clean -y
+
+USER root
+WORKDIR /home/${USER}/ros_ws/src
+RUN --mount=type=ssh git clone git@github.com:epfl-lasa/iiwa_toolkit_ns.git
+USER ${USER}

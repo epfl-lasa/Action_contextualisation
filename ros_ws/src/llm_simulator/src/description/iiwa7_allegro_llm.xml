@@ -24,7 +24,7 @@
     </default>
     <default class="visual_support">
         <!--          this class will not be counted into the dynamics and for visualization only-->
-      <geom contype="1" conaffinity="1"  rgba="0.7 0 0 0" condim="6" friction="12. 5. 1." solimp="0.99 1. 0.0001 0.5 1" solref="0.02 1."/>
+      <geom contype="1" conaffinity="1"  rgba="0.7 0 0 0" condim="6" friction="10. 5. 1." solimp="0.99 1. 0.0001 0.5 1" solref="0.02 1."/>
     </default>
     <default class="collision0">
       <geom contype="1" conaffinity="1" friction="0.1 0 0.001" solref="-100000 -200" />

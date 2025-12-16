@@ -279,8 +279,6 @@ def replan_after_success_gen(parameter_history, execution_time, average_score):
     Output the code as you did at first by assigning the full task plan to the variable 'task_plan' in a single statement.
     Take into account the parameters I have asked you to change during our conversation if any.
     In the new plan, make sure it is withing plus or minus 5 actions of the original task plan.
-    Retain the format of task_plan.
-
     """
 
     return str_0 + str_past_failures + str_past_successes +  str_3
@@ -329,7 +327,7 @@ def retune_after_success_gen(parameter_history, execution_time, average_score):
 
     The plan should still be viable-
 
-    Do not use other action. Make in-place change in task_plan, while retaining the format of task_plan.
+    Do not change the action. Make in-place change in task_plan.
 
     """
 
@@ -381,9 +379,9 @@ def retune_gen(history_log, parameter_history, task_plan):
 
     The score indicates the suitability of a combination. A higher score is better. First explain how the changes your are making will improve the chances of success of the task.
 
-    Then alter the arguments of the failed action at index {failure_index} in task_plan, to overcome the failure. Output should be of the for task_plan[i] = (index, action, new parameters), similar to initial task_plan's format
+    Then alter the arguments of the failed action at index {failure_index} in task_plan, to overcome the failure.
 
-    Do not use other action. Make in-place change in task_plan, while retaining the format of task_plan. 
+    Do not use other action. Make in-place change in task_plan.
 
     """
 

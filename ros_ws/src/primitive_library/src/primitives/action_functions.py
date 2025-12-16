@@ -17,7 +17,7 @@ js_lds = None
 approach_side_dst = 0.05
 approach_ee_offset_side = 0.14
 approach_ee_offset_side_additional = 0.02
-approach_ee_offset_top = 0.18
+approach_ee_offset_top = 0.19
 approach_top_dst = 0.00
 approach_top_dst_offset = 0.15
 table_altitude = 0.00
@@ -48,24 +48,12 @@ def reset_controller():
 
 
 def get_shelf_mesh() -> np.ndarray:
-    # Original shelf mesh
-    # <body name="shelf" pos="-0.1 -0.55 0.45">
     x_min = -0.4
     x_max = 0.2
     y_min = -0.65
     y_max = -0.35
     z_min = 0.45  # Only model the top part of the shelf
     z_max = 0.9
-
-    # # New shelf mesh
-    # <body name="shelf" pos="-0.1 0.75 0.45">
-    # <geom name="shelf" class="collision" type="box" size="0.3 0.2 .45" pos="0 0 0" mass="10" rgba="0.5 0.5 0.5 1"/>
-    # x_min = -0.4
-    # x_max = 0.2
-    # y_min = 0.95
-    # y_max = 0.55
-    # z_min = 0.45  # Only model the top part of the shelf
-    # z_max = 0.9
 
     total_nb_pts = 200
 
@@ -156,13 +144,13 @@ def get_meshes(obj_names: tp.List[str], detailed_meshes: bool = True, use_robot_
             new_mesh, new_radius = get_mesh_for_round_object(name)
         else:
 
-            if name == "table":
+            if name == "table" and False:
                 new_mesh = get_table_mesh()
                 if detailed_meshes:
                     new_radius = np.ones([new_mesh.shape[0]]) * 0.006  # from trigo
                 else:
                     new_radius = np.ones([new_mesh.shape[0]]) * 0.01
-            elif name == "shelf":
+            elif name == "shelf" and False:
                 new_mesh = get_shelf_mesh()
                 if detailed_meshes:
                     new_radius = np.ones([new_mesh.shape[0]]) * 0.007
@@ -175,7 +163,7 @@ def get_meshes(obj_names: tp.List[str], detailed_meshes: bool = True, use_robot_
                 if detailed_meshes:
                     new_radius -= 0.001
                 else:
-                    new_radius += 0.005
+                    new_radius += 0.02
 
         if use_robot_frame:
             new_mesh = (np.linalg.inv(iiwa_base_pos) @ np.concatenate((new_mesh, np.ones((new_mesh.shape[0], 1))), axis=1).T).T[:, :3]
@@ -274,7 +262,7 @@ def approach(js_lds, object_to_grasp: str,
         obj_radius_parl = -np.min(obj_radii_parl - obj_radii)
 
         # Adjust goal position to object
-        obj_goal[:3] -= np.expand_dims(approach_direction_perp * (obj_radius_perp), axis=1)
+        obj_goal[:3] -= np.expand_dims(approach_direction_perp * (obj_radius_perp + 0.03), axis=1)   # Adding hand width
         obj_goal[:3] -= np.expand_dims(approach_direction * (obj_radius_parl + approach_ee_offset_side), axis=1)
 
         if apply_offsets:
@@ -291,7 +279,7 @@ def approach(js_lds, object_to_grasp: str,
 
     elif grasp == "top":
 
-        obj_goal[2] = np.max(obj_mesh[:, 2])
+        obj_goal[2] = np.max(obj_mesh[:, 2]+obj_radii)
         obj_goal[2] += approach_top_dst
         obj_goal[2] += vertical_clearance_offset
 
@@ -300,9 +288,15 @@ def approach(js_lds, object_to_grasp: str,
             obj_goal[2] += approach_top_dst_offset
 
         if drop_side_offset:
-            obj_goal[:3] -= np.expand_dims(approach_direction * 0.09, axis=1)
+            obj_goal[:3] -= np.expand_dims(approach_direction * 0.15, axis=1)
         else:
-            obj_goal[:3] -= np.expand_dims(approach_direction_perp * (-0.01), axis=1)
+            if object_to_grasp == "paper_ball_2":
+                obj_goal[:3] -= np.expand_dims(approach_direction_perp * (0.025), axis=1)
+            elif object_to_grasp == "paper_ball_1":
+                obj_goal[:3] -= np.expand_dims(approach_direction_perp * (0.025), axis=1)
+            else:
+                obj_goal[:3] -= np.expand_dims(approach_direction_perp * (0.025), axis=1)
+
             obj_goal[:3] -= np.expand_dims(approach_direction * approach_ee_offset_top, axis=1)
 
         obj_yaw = np.degrees(np.arctan2(base_obj_vec[1], base_obj_vec[0]))
@@ -335,13 +329,13 @@ def approach(js_lds, object_to_grasp: str,
         js_lds.collision_proximity = obstacle_clearance
 
     # Set obstacles
-    # obstacles = ["apple", "eaten_apple",
-    #              "paper_ball_1", "paper_ball_2",
-    #              # "paper_ball_3",
-    #              "champagne_1", "champagne_2",
-    #              "table", "sink", "shelf", "trash_bin"]
+    obstacles = ["apple", "eaten_apple",
+                 "paper_ball_1", "paper_ball_2",
+                 # "paper_ball_3",
+                 "champagne_1", "champagne_2",
+                 "table", "sink", "shelf", "trash_bin"]
     # obstacles = ["eaten_apple", "champagne_1", "sink", "shelf", "trash_bin", "table"]
-    obstacles = llmu.OBSTACLES.copy()
+
     if disregard_table:
         obstacles.remove("table")
 
@@ -378,24 +372,24 @@ def pick(js_lds, object_to_grasp: str,
                 obstacle_ik=True,
                 vertical_clearance_offset=0.,
                 mock_run=mock_run,
-                disregard_table=False, # Was initially False
+                disregard_table=False,
                 disregard_object=object_to_grasp)
     if mock_run:
         return
 
-    if not js_lds._in_collision or js_lds._obstacle_collided == object_to_grasp:
+    if not js_lds._in_collision or js_lds._obstacle_collided == object_to_grasp or True:
         js_lds._in_collision = False
         js_lds._obstacle_collided = ''
         # Perform grasping
         js_lds.grasping = True
         js_lds.obj_grasped = object_to_grasp
-        # obstacles = ["apple", "eaten_apple",
-        #             "paper_ball_1", "paper_ball_2",
-        #             #"paper_ball_3",
-        #             "champagne_1", "champagne_2", "sink", "shelf",
-        #             "trash_bin"]
-        # obstacles = ["eaten_apple", "champagne_1", "sink", "shelf", "trash_bin"]
-        obstacles = llmu.OBSTACLES.copy()
+        obstacles = ["apple", "eaten_apple",
+                    "paper_ball_1", "paper_ball_2",
+                    #"paper_ball_3",
+                    "champagne_1", "champagne_2", "sink", "shelf",
+                    "trash_bin"]
+        #obstacles = ["eaten_apple", "champagne_1", "sink", "shelf", "trash_bin"]
+
 
         js_lds._obstacle_to_approach = js_lds.obj_grasped
 
@@ -417,7 +411,7 @@ def pick(js_lds, object_to_grasp: str,
         for fly_off_offset in [0.2]:
             hand_pos_goal = np.copy(current_hand_pos)
             hand_pos_goal[2] += fly_off_offset
-            js_lds.orientation = .9
+            js_lds.orientation = 1.
             js_lds.cartesian_goal = hand_pos_goal
             if not js_lds._failed_ik and not js_lds._in_collision:
                 print(f"Flyoff {fly_off_offset}")
@@ -429,7 +423,7 @@ def pick(js_lds, object_to_grasp: str,
 @robot_action
 def place(js_lds, object_to_grasp: str, orientation: float, speed: float, obstacle_clearance: float) -> None:
 
-    for vertical_offset in [0.3, 0.2, 0.1]:
+    for vertical_offset in [0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, .0]:
         if js_lds._in_collision:
             break
 
@@ -445,37 +439,53 @@ def place(js_lds, object_to_grasp: str, orientation: float, speed: float, obstac
                 drop_side_offset=True)
         if not js_lds._failed_ik:
             break
+        else:
+            print("Failed IK")
 
     if not js_lds._in_collision:
-        approach(object_to_grasp,
-                    speed, grasp="top",
-                    orientation=orientation,
-                    detailed_obstacles=True,
-                    disregard_object_to_grasp=True,
-                    vertical_clearance_offset=0.0,
-                    disregard_table = False,
-                    apply_offsets=False,
-                    obstacle_clearance=obstacle_clearance,
-                    drop_side_offset=True)
+        for vertical_offset in [0.15, 0.15, 0.2]:
+            approach(object_to_grasp,
+                        speed, grasp="top",
+                        orientation=orientation,
+                        detailed_obstacles=True,
+                        disregard_object_to_grasp=True,
+                        vertical_clearance_offset=vertical_offset,
+                        disregard_table = False,
+                        apply_offsets=False,
+                        obstacle_clearance=obstacle_clearance,
+                        drop_side_offset=True)
+            if not js_lds._failed_ik:
+                break
+            else:
+                print("Failed IK")
 
-    if not js_lds._in_collision:
+    if not js_lds._in_collision or True:
         # Drop the object
         js_lds.let_go = True
         js_lds.run_controller()
         js_lds.grasping = False
-        js_lds.let_go = False
-
-    if not js_lds._in_collision:
+        
+    if not js_lds._in_collision or True:
         # Flyoff
         print("Flyoff")
         hand_pos_goal = js_lds.hand_position[:3, 3]
-        hand_pos_goal[2] += 0.3
-        js_lds.orientation = 1.
+        hand_pos_goal[2] += 0.4
+        js_lds.orientation = .9
         js_lds.cartesian_goal = hand_pos_goal
+
+        if js_lds._failed_ik:
+            hand_pos_goal[2] -= 0.1
+            js_lds.cartesian_goal = hand_pos_goal
+
+        if js_lds._failed_ik:
+            hand_pos_goal[2] -= 0.1
+            js_lds.cartesian_goal = hand_pos_goal
 
         if not js_lds._failed_ik:
             js_lds.run_controller()
             js_lds.obj_grasped = ""
+        js_lds.let_go = False
+
 
 
 @robot_action
@@ -487,13 +497,13 @@ def drop(js_lds, object_to_grasp: str,
     approach(object_to_grasp,
              speed, grasp="top",
              orientation=orientation,
-             detailed_obstacles=True,
+             detailed_obstacles=False,
              disregard_object_to_grasp=True,
-             disregard_table=True,
+             disregard_table=False,
              apply_offsets=False,
-             force_altitude=1.5,
+             force_altitude=0.8,
              obstacle_clearance=obstacle_clearance,
-             drop_side_offset=False)
+             drop_side_offset=True)
     if not js_lds._in_collision and not js_lds._failed_ik:
         # Drop the object
         js_lds.let_go = True

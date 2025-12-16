@@ -6,7 +6,7 @@ from primitives.predicates import holding, collision_free
 
 def main() -> None:
 
-    object_to_grasp = "champagne_2"
+    object_to_grasp = "paper_ball_1"
     print("Starting main")
     rospy.init_node("test_approach")
     print("Node initialized")

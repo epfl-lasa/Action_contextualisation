@@ -23,7 +23,7 @@ class VisionServer:
         "/vrpn_client_node/shelf/pose",
         "/vrpn_client_node/sink/pose",
         "/vrpn_client_node/table/pose",
-        "/vrpn_client_node/trash_bin/pose"
+        "/vrpn_client_node/trash_bin/pose",
         "/vrpn_client_node/iiwa_base7/pose"
         ]
     
@@ -41,19 +41,24 @@ class VisionServer:
         'trash_bin': 0,
     }
 
+
+    OPTI_WORLD_TO_WORLD = [0, 0, 0, 
+                           0.5, 0.5, 0.5, 0.5]
+
     IIWA_BASE_IN_IIWA_MARKER = [-3.222253154994657309e-02,
-                                -204.178227469017845030e-03,
+                                -4.178227469017845030e-03,
                                 -7.590960376033785428e-02,
-                                9.989405744276288468e-01,
-                                -4.300839714405534607e-03,
-                                8.915593913700768994e-03,
-                                4.494155899738935117e-02]
+                                1.,
+                                0.,
+                                0.,
+                                0.]
     
     INERTIA_SERVER = "/iiwa/iiwa_mass_server"
 
     def __init__(self):
         self.object_poses = {}
         for topic in self.VRPN_TOPICS_NAMES:
+            print(topic)
             rospy.Subscriber(topic, PoseStamped, self.pose_callback, (topic,))
         
         rospy.wait_for_service(self.INERTIA_SERVER)
@@ -73,7 +78,7 @@ class VisionServer:
 
         nb_pts_per_side = int(np.round(np.sqrt(nb_table_points)))
         x_range = np.linspace(table_x_min, table_x_max, nb_pts_per_side)
-        y_range = np.array([0])
+        y_range = np.array([-0.0401-0.01-0.02])
         z_range = np.linspace(table_z_min, table_z_max, nb_pts_per_side)
 
         xx, yy, zz = np.meshgrid(x_range, y_range, z_range)
@@ -83,11 +88,11 @@ class VisionServer:
         zz = np.expand_dims(zz.flatten(), axis=1)
 
         mesh = np.concatenate((xx, yy, zz), axis=1)
-        radii = np.ones((mesh.shape[0])) * 0.01
+        radii = np.ones((mesh.shape[0])) * 0.04517
 
         return mesh, radii
     
-    def get_sink_mesh(self):
+    def get_sink_mesh(self): 
         nb_table_points = 400
         table_x_min = -0.2
         table_x_max = 0.2
@@ -96,7 +101,7 @@ class VisionServer:
 
         nb_pts_per_side = int(np.round(np.sqrt(nb_table_points)))
         x_range = np.linspace(table_x_min, table_x_max, nb_pts_per_side)
-        y_range = np.array([0])
+        y_range = np.array([-0.03])
         z_range = np.linspace(table_z_min, table_z_max, nb_pts_per_side)
 
         xx, yy, zz = np.meshgrid(x_range, y_range, z_range)
@@ -106,20 +111,20 @@ class VisionServer:
         zz = np.expand_dims(zz.flatten(), axis=1)
 
         mesh = np.concatenate((xx, yy, zz), axis=1)
-        radii = np.ones((mesh.shape[0])) * 0.025
+        radii = np.ones((mesh.shape[0])) * 0.015
 
         return mesh, radii
 
     def get_shelf_mesh(self):
         nb_table_points = 400
-        table_x_min = -0.2
-        table_x_max = 0.2
-        table_z_min = -0.35
-        table_z_max =  0.35
+        table_x_min = -0.16
+        table_x_max = 0.16
+        table_z_min = -0.25
+        table_z_max =  0.25
 
         nb_pts_per_side = int(np.round(np.sqrt(nb_table_points)))
         x_range = np.linspace(table_x_min, table_x_max, nb_pts_per_side)
-        y_range = np.array([0])
+        y_range = np.array([-0.04])
         z_range = np.linspace(table_z_min, table_z_max, nb_pts_per_side)
 
         xx, yy, zz = np.meshgrid(x_range, y_range, z_range)
@@ -129,15 +134,15 @@ class VisionServer:
         zz = np.expand_dims(zz.flatten(), axis=1)
 
         mesh = np.concatenate((xx, yy, zz), axis=1)
-        radii = np.ones((mesh.shape[0])) * 0.025
+        radii = np.ones((mesh.shape[0])) * 0.02
         return mesh, radii
     
     def get_bin_mesh(self):
         nb_table_points = 400
-        table_x_min = -0.16
-        table_x_max = 0.16
-        table_z_min = -0.16
-        table_z_max =  0.16
+        table_x_min = -0.18
+        table_x_max = 0.18
+        table_z_min = -0.18
+        table_z_max =  0.18
 
         nb_pts_per_side = int(np.round(np.sqrt(nb_table_points)))
         x_range = np.linspace(table_x_min, table_x_max, nb_pts_per_side)
@@ -151,24 +156,25 @@ class VisionServer:
         zz = np.expand_dims(zz.flatten(), axis=1)
 
         mesh = np.concatenate((xx, yy, zz), axis=1)
-        radii = np.ones((mesh.shape[0])) * 0.01
+        radii = np.ones((mesh.shape[0])) * 0.02
         return mesh, radii
 
     def get_paper_ball_mesh(self):
         return np.array([[0., 0., .0]]), np.array([0.04])
     
     def get_apple_mesh(self):
-        return np.array([[0., 0., .0]]), np.array([0.065])
+        return np.array([[0., 0., .0]]), np.array([0.07])
     
     def get_eaten_apple_mesh(self):
-        return np.array([[0., 0., .0]]), np.array([0.05])
+        return np.array([[0., 0., .0]]), np.array([0.06])
     
     def get_champagne_mesh(self):
 
-        mesh = np.array([[0., .3, 0.],
-                         [0., .6, 0.],
-                         [0., .12, 0.],])
-        radii = np.array([.3, .3, .3])
+        mesh = np.array([[0., -.10, 0.],
+                         [0., -.05, 0.],
+                         [0., -.01, 0.],
+                         [0.,  .02, 0.]])
+        radii = np.array([.04, .04, .04, 0.04])
 
         return mesh, radii
 
@@ -211,6 +217,7 @@ class VisionServer:
         obj_name = req.object_name
         if obj_name == 'kuka_base':
             obj_name = 'iiwa_base7'
+            
         # Wait for object position
         while not obj_name in self.object_poses.keys():
             time.sleep(0.1)
@@ -218,8 +225,16 @@ class VisionServer:
         # Get object position
         obj_pos = self.object_poses[obj_name]
 
+        # Apply transformation to put Z up
+        obj_se3 = llmh.mujoco_pos_quat_to_se3(obj_pos[:3], obj_pos[3:])
+        iiwa_frame_se3 = llmh.mujoco_pos_quat_to_se3(self.OPTI_WORLD_TO_WORLD[:3],
+                                                    self.OPTI_WORLD_TO_WORLD[3:])
+        obj_full_se3 = iiwa_frame_se3 @ obj_se3
+        obj_pos = llmh.se3_to_mujoco_cartesian(obj_full_se3)
+
         # Account for marker-urdf offset with the iiwa_base
         if obj_name == 'iiwa_base7':
+            
             obj_se3 = llmh.mujoco_pos_quat_to_se3(obj_pos[:3], obj_pos[3:])
             iiwa_frame_se3 = llmh.mujoco_pos_quat_to_se3(self.IIWA_BASE_IN_IIWA_MARKER[:3],
                                                          self.IIWA_BASE_IN_IIWA_MARKER[3:])
@@ -228,6 +243,7 @@ class VisionServer:
 
         # Send obj pos
         reply = objPosResponse()
+        
         reply.object_position = obj_pos.tolist()
         return reply
 
@@ -243,6 +259,13 @@ class VisionServer:
         # Get object position
         obj_pos = self.object_poses[obj_name]
         #obj_pos[1] += self.COM_Y_OFFSETS[obj_name]  # TODO: Wrong axis
+
+        # Apply transformation to put Z up
+        obj_se3 = llmh.mujoco_pos_quat_to_se3(obj_pos[:3], obj_pos[3:])
+        iiwa_frame_se3 = llmh.mujoco_pos_quat_to_se3(self.OPTI_WORLD_TO_WORLD[:3],
+                                                    self.OPTI_WORLD_TO_WORLD[3:])
+        obj_full_se3 =  iiwa_frame_se3 @ obj_se3
+        obj_pos = llmh.se3_to_mujoco_cartesian(obj_full_se3)
 
         if obj_name == 'iiwa_base7':
             obj_se3 = llmh.mujoco_pos_quat_to_se3(obj_pos[:3], obj_pos[3:])
@@ -260,10 +283,11 @@ class VisionServer:
         return reply
 
     def _obj_mesh_srv_cb(self, req: objMeshRequest):
-
         # Wait for object position
         obj_name = req.object_name
+        print(f"Answering to mesh request {obj_name}")
         while not obj_name in self.object_poses.keys():
+            breakpoint()
             time.sleep(0.1)
 
         # Get mesh position
@@ -272,6 +296,14 @@ class VisionServer:
 
         # Adjust mesh position to world
         obj_pos = self.object_poses[obj_name]
+
+        # Apply transformation to put Z up
+        obj_se3 = llmh.mujoco_pos_quat_to_se3(obj_pos[:3], obj_pos[3:])
+        iiwa_frame_se3 = llmh.mujoco_pos_quat_to_se3(self.OPTI_WORLD_TO_WORLD[:3],
+                                                    self.OPTI_WORLD_TO_WORLD[3:])
+        obj_full_se3 = iiwa_frame_se3 @ obj_se3
+        obj_pos = llmh.se3_to_mujoco_cartesian(obj_full_se3)
+
         obj_pos_se3 = llmh.mujoco_pos_quat_to_se3(obj_pos[:3], obj_pos[3:])
         obj_vert_ext = np.ones((obj_vertices.shape[0], obj_vertices.shape[1]+1))
         obj_vert_ext[:, :-1] = obj_vertices

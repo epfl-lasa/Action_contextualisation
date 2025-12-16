@@ -330,10 +330,10 @@ locations = [
 
 task = "clear the table efficiently"
 
-iter = 1 # do not touch
-retuned_iter = 1 # do not touch
-retune_count = 3
-replan_count = 7
+iter = 1
+retuned_iter = 1
+retune_count = 5
+replan_count = 5
 
 log_folder = ""
 
@@ -416,7 +416,7 @@ def extract_retune_action(full_retune_answer: str,
                 break
 
         if not task_plan_changed:
-            error_message = "After running your code the plan 'task_plan' = You are expected to provide on or more python lines that have the effect of updating the task plan according to the instructions you were give. Pleas regenerate your answer"
+            error_message = "After running your code the plan 'task_plan' did not change. You are expected to provide on or more python lines that have the effect of updating the task plan according to the instructions you were give. Pleas regenerate your answer"
 
     # Check that plan starts at 0, is in order and has no gaps
     if len(error_message) == 0:
@@ -665,8 +665,7 @@ if __name__ == "__main__":
     rospy.init_node("llm_planner")
     parameter_history = parameter_history = {'success': {}, 'failure': {}}
     domain_history = None
-    success, parameter_history, domain_history =  plan_and_retune(parameter_history, domain_history, warm_start=False)
-    # success, parameter_history, domain_history =  plan_and_retune(parameter_history, domain_history, warm_start=True) # Originally warm start is True
+    success, parameter_history, domain_history =  plan_and_retune(parameter_history, domain_history, warm_start=True)
 
 if False:
     action_plan_ask = """

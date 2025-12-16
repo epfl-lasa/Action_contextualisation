@@ -5,21 +5,23 @@ import numpy as np
 import time
 import rospy
 from scipy.spatial.transform import Rotation
+from threading import Lock, Thread
 
 from llm_common import helpers as llmh
 
 
 class JS_LDS(ControllerBase):
-    Kp = np.array([80, 80, 80, 80, 80, 80, 80,  # IIWA
-                   200, 150, 150, 150,   # Index
-                   200, 150, 150, 150,   # Middle
-                   200, 150, 150, 150,   # Ring
-                   100, 150, 150, 150]) * 0.1 # Thumb
-    Kd = np.array([5., 5., 5., 5., 5., 5., 5.,   # IIWA
-                   3.0, 5.0, 5.0, 5.0,   # Index
-                   3.0, 5.0, 5.0, 5.0,   # Middle
-                   3.0, 5.0, 5.0, 5.0,   # Ring
-                   3.0, 5.0, 5.0, 5.0]) *0.01 # Thumb
+    Kp = np.array([50, 80, 50, 70, 15, 40., 20.,  # IIWA
+                   0.4, 0.7, 0.4, 0.4,   # Index
+                   0.4, 0.7, 0.4, 0.4,   # Middle
+                   0.4, 0.5, 0.3, 0.4,   # Ring
+                   0.7, 0.3, 0.45, 0.4]) * 0.15 #  Thumb
+
+    Kd = np.array([5, 6, 4, 4, 5, 3, 1.5,   # IIWA
+                   .0, 0., .0, .0,   # Index
+                   .0, 0., .0, .0,   # Middle
+                   .0, 0., .0, .0,   # Ring
+                   .0, .0, .0, .0]) * 0.005 # Thumb
 
     Ki = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1,   # IIWA
                    .0, .0, .0, .0,   # Index
@@ -32,10 +34,10 @@ class JS_LDS(ControllerBase):
     SPEED_TOL = np.array([0.01] * 7 + [0.1] * 16)
     CONTROLLER_SLEEP_PRD = 0.001
 
-    TASK_SPACE_TRANS_TOL = 0.0025   # m
-    TASK_SPACE_ANGLE_TOL = 1       # deg
+    TASK_SPACE_TRANS_TOL = 0.001   # m
+    TASK_SPACE_ANGLE_TOL = 0.5       # deg
     TASK_SPACE_SPEED_TOL = 0.001   # m/s
-    TASK_SPACE_OMEGA_TOL = 0.1      # deg/s
+    TASK_SPACE_OMEGA_TOL = .1      # deg/s
 
     def __init__(self,
                  description_folder: tp.Union[str, Path],
@@ -54,6 +56,22 @@ class JS_LDS(ControllerBase):
         self.timeout = False
         self._qdd_integrator = None
         self._failed_ik = False
+
+        self._controller_prds = []
+        # Idle thread
+        self._idle_thread_run_signal = Lock()
+        self._idle_thread = Thread(target=self.idle_controller)
+
+        # Start Idle thread
+        self._idle_thread.start()
+
+
+    def __del__(self):
+
+        if not self._idle_thread_run_signal.locked():
+            self._idle_thread_run_signal.acquire()
+        if self._idle_thread.run():
+            self._idle_thread.join()
 
     @property
     def cartesian_goal(self):
@@ -104,6 +122,50 @@ class JS_LDS(ControllerBase):
         else:
             raise ValueError("Joint speed scale must be between 0 and 1")
 
+
+    def idle_controller(self) -> None:
+        print("Starting Idle thread")
+
+        self._joint_speed_scale = 1
+        idle_goal = self.x_iiwa + self.x_allegro
+        desired_qdd_prev = np.zeros(self.n)
+        start_time = time.time()
+        time_prev = start_time
+        self._qdd_integrator = np.zeros(self.n)
+        idle_thread_rate = rospy.Rate(50)
+        while not self._idle_thread_run_signal.locked():
+            while not self._new_iiwa_js_event.is_set() and not self._new_allegro_js_event.is_set():
+                time.sleep(self.CONTROLLER_SLEEP_PRD)
+
+            # Get robot joint state
+            q = np.asarray(self.x_iiwa + self.x_allegro)
+            current_qd = self.xd_iiwa + self.xd_allegro
+            self._new_iiwa_js_event.clear()
+            self._new_allegro_js_event.clear()
+
+            desired_qd = self._compute_lds_speed(np.asarray(q), np.asarray(idle_goal))
+            desired_qdd = desired_qd - current_qd
+            (torque_cmd, time_prev) = self._compute_torque_from_js(time_prev, desired_qdd, desired_qdd_prev)
+
+            desired_qdd_prev = desired_qdd
+
+            if self.let_go:
+                torque_cmd = self._compute_letgo_torques(torque_cmd)
+            elif self.grasping: 
+                torque_cmd = self._compute_grasping_torques(torque_cmd)                
+            else:
+                torque_cmd = self._compute_open_torques(torque_cmd)
+
+            # Send torques to robots
+            self._send_iiwa_position(idle_goal[:7])
+            # self._send_iiwa_torque(torque_cmd[:self._n_rbt])
+            self._send_allegro_torque(torque_cmd[self._n_rbt:])
+            idle_thread_rate.sleep()
+
+        print("Getting out of idle thread")
+
+
+
     def compute_ik_iiwa(self,
                         goal_se3: np.ndarray,
                         q_iiwa: np.ndarray,
@@ -119,7 +181,7 @@ class JS_LDS(ControllerBase):
         iiwa_joint_goal = np.ones_like(solution_list[0]) * np.inf
         solution_id = -1
         for id, (solution, success) in enumerate(zip(solution_list, success_list)):
-            if success and np.linalg.norm(q_iiwa-solution) < np.linalg.norm(q_iiwa-iiwa_joint_goal):
+            if success and np.linalg.norm(q_iiwa[1:]-solution[1:]) < np.linalg.norm(q_iiwa[1:]-iiwa_joint_goal[1:]):
                 iiwa_joint_goal = solution
                 solution_id = id
 
@@ -137,7 +199,9 @@ class JS_LDS(ControllerBase):
 
         if self._joint_goal is None:
             raise RuntimeError("Must set a cartesian goal before running the controller")
-
+        
+        self._idle_thread_run_signal.acquire()
+        self._idle_thread.join()
         desired_qdd_prev = np.zeros(self.n)
         self._qdd_integrator = np.zeros(self.n)
         start_time = time.time()
@@ -159,7 +223,11 @@ class JS_LDS(ControllerBase):
         else:
             self._joint_goal[7:] = self.qz[self._n_rbt:]
 
-
+        print(np.rad2deg(self._joint_goal))
+        i = 0
+        i_interp = 5
+        controller_rate = rospy.Rate(200)
+        desired_qd = None
         while True:
 
             # Check for time out
@@ -168,37 +236,76 @@ class JS_LDS(ControllerBase):
                 self.timeout = True
                 break
 
-            # Compute joint state from LDS
-            (_, q, current_qd, desired_qd) = self._compute_current_lds_speed()
+            q = self.x_iiwa + self.x_allegro
+            current_qd = self.xd_iiwa + self.xd_allegro
+            if i_interp == 5:
+                # Compute joint state from LDS
+                (_, q, current_qd, desired_qd) = self._compute_current_lds_speed()
 
-            # Compute desired qd
-            desired_qd, stop_request = self._compute_desired_qd(q, desired_qd)
-            if stop_request:
-                break
+                # Compute desired qd
+                desired_qd, stop_request = self._compute_desired_qd(q, desired_qd)
+                if stop_request:
+                    break
 
-            # Compute desired torques
-            desired_qdd = desired_qd - current_qd
-            # print(np.rad2deg(np.max(np.absolute(desired_qdd[:7]))))
-            (torque_cmd, time_prev) = self._compute_torque_from_js(time_prev, desired_qdd, desired_qdd_prev)
-            desired_qdd_prev = desired_qdd
+                # Compute desired torques
+                desired_qdd = desired_qd - current_qd
+                # print(np.rad2deg(np.max(np.absolute(desired_qdd[:7]))))
+                
+                time_pp = time_prev
+                (torque_cmd, time_prev) = self._compute_torque_from_js(time_prev, desired_qdd, desired_qdd_prev)
+                
+                d_time = time_prev - time_pp
+                if len(self._controller_prds) >= 8:
+                    self._controller_prds[:-1] = self._controller_prds[1:]
+                    self._controller_prds[1] = d_time
+                else:
+                    self._controller_prds.append(d_time)
+                desired_qdd_prev = desired_qdd
+                i_interp = 0
 
+                # i += 1
+                # if i == 2:
+                #     print("Cmd:", np.rad2deg(self._joint_goal[:7]-q[:7]))
+                #     i = 0
+            
+            i_interp += 1
+            
+
+            iiwa_postion_cmd = self._compute_postion_ctrl(q[:7], desired_qd[:7], current_qd[:7])
+            
+            
             # if self.grasping:
             #     torque_cmd = self._compute_grasping_torques(torque_cmd)
 
             # Apply high outwards torque for letting go
-            if self.let_go and 5 < (time.time() - start_time) < 7:
+            # if self.let_go and 5 < (time.time() - start_time) < 7:
+            #     torque_cmd = self._compute_letgo_torques(torque_cmd)
+
+            if self.let_go:
                 torque_cmd = self._compute_letgo_torques(torque_cmd)
+            elif self.grasping: 
+                torque_cmd = self._compute_grasping_torques(torque_cmd)                
+            else:
+                torque_cmd = self._compute_open_torques(torque_cmd)
 
             # Send torques to robots
-            self._send_iiwa_torque(torque_cmd[:self._n_rbt])
+            # self._send_iiwa_torque(torque_cmd[:self._n_rbt])
+            # self._send_iiwa_position(self._joint_goal[:7])
+            self._send_iiwa_position(iiwa_postion_cmd)
             self._send_allegro_torque(torque_cmd[self._n_rbt:])
 
+            
             # Check task space convergence
             ts_converged = self._check_task_space_convergence(q, current_qd, desired_qd, time.time() - start_time)
             if ts_converged:
                 break
+            
+            controller_rate.sleep()
 
-        self._send_iiwa_torque(np.zeros(self._n_rbt))
+        self._idle_thread_run_signal.release()
+        self._idle_thread = Thread(target=self.idle_controller)
+        self._idle_thread.start()
+
 
     def send_robot_zero_torque(self):
         self._send_iiwa_torque(np.zeros(self._n_rbt))
@@ -258,26 +365,27 @@ class JS_LDS(ControllerBase):
 
         goal_reached = ee_trans_conv and ee_rot_conv and ee_speed_conv and ee_omega_conv
         has_converged = ee_speed_conv and ee_omega_conv and ee_desired_speed_conv and ee_desired_omega_conv
-        is_locked = delta_time >=30 and ee_speed_conv and ee_omega_conv
+        is_locked = delta_time >=10 and ee_speed_conv and ee_omega_conv
 
         if self.grasping:
-            grasping_has_converged = np.all((np.absolute(qd) < self.SPEED_TOL)[self._n_rbt:]) and delta_time >= 10
+            grasping_has_converged = np.all((np.absolute(qd) < self.SPEED_TOL)[self._n_rbt:]) and delta_time >= 5
             #print(goal_reached, has_converged, is_locked, grasping_has_converged)
             goal_reached = goal_reached and grasping_has_converged
             has_converged = has_converged and grasping_has_converged
             is_locked = is_locked and grasping_has_converged
 
         if self.let_go:
-            let_go_has_converged = np.all(np.absolute(q[7:] - self._joint_goal[7:]) <= self.JOINT_TOL[7:]) or delta_time >= 20
+            let_go_has_converged = np.all(np.absolute(q[7:] - self._joint_goal[7:]) <= self.JOINT_TOL[7:]) or delta_time >= 5
             goal_reached = goal_reached and let_go_has_converged
             has_converged = has_converged and let_go_has_converged
-            is_locked = has_converged or let_go_has_converged   # Doesn't make sense to compute lock on let go
+            is_locked = is_locked or let_go_has_converged   # Doesn't make sense to compute lock on let go
 
         if not (self.grasping or self.let_go):
             has_converged = False
 
         #print(goal_reached, has_converged, is_locked)
-
+        if (goal_reached or has_converged or is_locked):
+            print(goal_reached, has_converged, is_locked)
         return goal_reached or has_converged or is_locked
 
     def _compute_desired_qd(self, q: np.ndarray, desired_qd: np.ndarray) -> np.ndarray:
@@ -288,11 +396,12 @@ class JS_LDS(ControllerBase):
         scaled_speeds = np.zeros_like(q)
 
         # IIWA speeds
-        scaled_speeds[:self._n_rbt] = \
-            (q_attractor[:self._n_rbt] - q[:self._n_rbt]) / \
-            (self.qlim[1][:self._n_rbt]-self.qlim[0][:self._n_rbt]).max() \
-            * self.IIWA_MAX_ANGLE_SPEED * self._joint_speed_scale
-
+        speeds_iiwa = (q_attractor[:self._n_rbt] - q[:self._n_rbt]) * self._joint_speed_scale * 10
+        max_speed_iiwa = np.max(np.abs(speeds_iiwa))
+        if max_speed_iiwa > self.IIWA_MAX_ANGLE_SPEED:
+            speeds_iiwa = speeds_iiwa / max_speed_iiwa * self.IIWA_MAX_ANGLE_SPEED
+        scaled_speeds[:self._n_rbt] = speeds_iiwa
+    
         # Allegro speeds
         scaled_speeds[self._n_rbt:] = \
             (q_attractor[self._n_rbt:] - q[self._n_rbt:]) / \
@@ -336,20 +445,20 @@ class JS_LDS(ControllerBase):
         torque_cmd = inertia @ (desired_qdd * self.Kp +
                                 (desired_qdd_prev - desired_qdd) / delta_time * self.Kd +
                                 self._qdd_integrator * self.Ki)
-        torque_cmd_inertia = inertia @ desired_qdd
+        # torque_cmd_inertia = inertia @ desired_qdd
         time_prev = current_time
 
         # Clip inertial torques
-        torque_cmd_inertia[:self._n_rbt] = np.clip(torque_cmd_inertia[:self._n_rbt],
-                                                   -self.IIWA_MAX_TORQUE,
-                                                   self.IIWA_MAX_TORQUE)
-        torque_cmd_inertia[self._n_rbt:] = np.clip(torque_cmd_inertia[self._n_rbt:],
-                                                   -self.ALLEGRO_MAX_TORQUE,
-                                                   self.ALLEGRO_MAX_TORQUE)
+        # torque_cmd_inertia[:self._n_rbt] = np.clip(torque_cmd_inertia[:self._n_rbt],
+        #                                            -self.IIWA_MAX_TORQUE,
+        #                                            self.IIWA_MAX_TORQUE)
+        # torque_cmd_inertia[self._n_rbt:] = np.clip(torque_cmd_inertia[self._n_rbt:],
+        #                                            -self.ALLEGRO_MAX_TORQUE,
+        #                                            self.ALLEGRO_MAX_TORQUE)
 
         # Scale down iiwa torque
         torque_cmd_iiwa = torque_cmd[:self._n_rbt]
-        total_iiwa_torque = torque_cmd_iiwa + torque_cmd_inertia[:self._n_rbt]
+        total_iiwa_torque = torque_cmd_iiwa # + torque_cmd_inertia[:self._n_rbt]
         if np.any(np.absolute(total_iiwa_torque) > self.IIWA_MAX_TORQUE):
             highest_torque_idx = np.argmax(np.absolute(total_iiwa_torque))
             max_mvt_toque = np.absolute(torque_cmd_iiwa[highest_torque_idx])
@@ -357,16 +466,16 @@ class JS_LDS(ControllerBase):
 
         # Scale down allegro torque
         torque_cmd_allegro = torque_cmd[self._n_rbt:]
-        total_allegro_torque = torque_cmd_allegro + torque_cmd_inertia[self._n_rbt:]
+        total_allegro_torque = torque_cmd_allegro # + torque_cmd_inertia[self._n_rbt:]
         if np.any(np.absolute(total_allegro_torque) > self.ALLEGRO_MAX_TORQUE):
             highest_torque_idx = np.argmax(np.absolute(total_allegro_torque))
             max_mvt_toque = np.absolute(torque_cmd_allegro[highest_torque_idx])
             torque_cmd[self._n_rbt:] = torque_cmd_allegro / max_mvt_toque * self.ALLEGRO_MAX_TORQUE
 
-        return (torque_cmd_inertia + torque_cmd, time_prev)
+        return torque_cmd, time_prev
 
     def _compute_grasping_torques(self, desired_torques: np.ndarray) -> np.ndarray:
-        grasping_torque = 0.05
+        grasping_torque = 0.2
 
         desired_torques[8] = grasping_torque
         desired_torques[9] = grasping_torque
@@ -387,25 +496,55 @@ class JS_LDS(ControllerBase):
         return desired_torques
 
     def _compute_letgo_torques(self, desired_torques: np.ndarray) -> np.ndarray:
-        grasping_torque = -0.3
+        grasping_torque = -0.5
 
         desired_torques[8] = grasping_torque
-        #desired_torques[9] = grasping_torque
-        #desired_torques[10] = grasping_torque
+        desired_torques[9] = grasping_torque
+        desired_torques[10] = grasping_torque
 
         desired_torques[12] = grasping_torque
-        #desired_torques[13] = grasping_torque
-        #desired_torques[14] = grasping_torque
+        desired_torques[13] = grasping_torque
+        desired_torques[14] = grasping_torque
 
         desired_torques[16] = grasping_torque
-        #desired_torques[17] = grasping_torque
-        #desired_torques[18] = grasping_torque
+        desired_torques[17] = grasping_torque
+        desired_torques[18] = grasping_torque
 
-        #desired_torques[20] = grasping_torque
-        #desired_torques[21] = grasping_torque
+        desired_torques[19] = grasping_torque
+        desired_torques[20] = grasping_torque
+        desired_torques[21] = grasping_torque
+        desired_torques[22] = grasping_torque
+
+        return desired_torques
+    
+    def _compute_open_torques(self, desired_torques: np.ndarray) -> np.ndarray:
+        grasping_torque = -0.5
+
+        desired_torques[8] = grasping_torque
+        desired_torques[9] = grasping_torque
+        desired_torques[10] = grasping_torque
+
+        desired_torques[12] = grasping_torque
+        desired_torques[13] = grasping_torque
+        desired_torques[14] = grasping_torque
+
+        desired_torques[16] = grasping_torque
+        desired_torques[17] = grasping_torque
+        desired_torques[18] = grasping_torque
+
+        desired_torques[20] = grasping_torque
+        desired_torques[21] = grasping_torque
         desired_torques[22] = grasping_torque
 
         return desired_torques
 
+    def _compute_postion_ctrl(self, q: np.ndarray, desired_speed: np.ndarray, current_speed: np.ndarray) -> np.ndarray:
 
+        transmision_time = np.average(self._controller_prds)
+        if np.rad2deg(np.max(np.abs(self._joint_goal[:7] - q))) <= -np.inf:
+            goal_pos = self._joint_goal[:7]
+        else:
+            delta_speed = desired_speed-current_speed
+            goal_pos = q + delta_speed * 1/30
+        return goal_pos
 

@@ -81,82 +81,6 @@ class JS_LDS_OA(JS_LDS_ORIENTED):
                                    q: np.ndarray,
                                    desired_qd: np.ndarray) -> tp.Tuple[bool, str, np.ndarray]:
 
-        # # Find closest obstacle
-        # self._jsdf_model.arm_hand_robot.set_system_config(q, syn_type=0)
-        # distances = self._jsdf_model.whole_arm_inference_with_gradient(self._obstacles, return_grad=False)
-        # adjusted_distances = -distances.cpu().detach().numpy()
-
-        # min_distances = np.min(adjusted_distances, axis=1)
-        # obstacles = self._obstacles
-        # radii = self._obstacles_radii
-        # obstacle_names = np.asarray(self._obstacles_names)
-
-        # # Disregard collision with grasped object
-        # if self.grasping and len(self.obj_grasped):
-        #     valid_obstacles_idx = np.where(np.asarray(obstacle_names) != self.obj_grasped)[0]
-        #     min_distances = min_distances[valid_obstacles_idx]
-        #     obstacles = obstacles[valid_obstacles_idx]
-        #     obstacle_names = obstacle_names[valid_obstacles_idx]
-        #     radii = radii[valid_obstacles_idx]
-
-        # # Postential object to disregard
-        # if len(self._obstacle_to_approach) > 0:
-        #     valid_obstacles_idx = np.where(np.asarray(obstacle_names) != self._obstacle_to_approach)[0]
-        #     min_distances = min_distances[valid_obstacles_idx]
-        #     obstacles = obstacles[valid_obstacles_idx]
-        #     obstacle_names = obstacle_names[valid_obstacles_idx]
-        #     radii = radii[valid_obstacles_idx]
-
-        # # Check for collisions in general
-        # is_collided = np.min(min_distances) < self.COLLISION_THRESHOLD
-        # obstacle_collided = ""
-        # if is_collided:
-        #     collided_idx = np.argmin(min_distances)
-        #     potential_collision_names = np.asarray(obstacle_names)
-        #     obstacle_collided = potential_collision_names[collided_idx]
-
-
-        # # Update proximity history
-        # self._proximity_history.append(np.min(min_distances))
-        # self._max_prox = np.max([self._max_prox, np.max(adjusted_distances)])
-
-        # close_idx = np.where(min_distances < self.collision_proximity)[0]
-
-        # if len(close_idx) > 0:
-        #     min_distances = min_distances[close_idx]
-        #     (_, grad) = self._jsdf_model.whole_arm_inference_with_gradient(obstacles[close_idx])
-        #     grad = -grad.cpu().numpy()
-        #     obstacle_names = obstacle_names[close_idx]
-        #     radii = radii[close_idx]
-        #     # Only take the closest point of each obstacle
-        #     # unique_dst = []
-        #     # unique_grad = []
-        #     min_distances = (min_distances.T - radii.T).T
-
-        #     # for obstacle in set(obstacle_names):
-        #     #     obstacle_idx_bool = (obstacle_names == obstacle)
-        #     #     min_dst = np.min(min_distances[obstacle_idx_bool])
-        #     #     arg_min = np.argmin(min_distances[obstacle_idx_bool])
-        #     #     min_grad = grad[obstacle_idx_bool][arg_min]
-        #     #     unique_dst.append(min_dst)
-        #     #     unique_grad.append(min_grad)
-        #     # min_distances = np.asarray(unique_dst)
-        #     # grad = np.asarray(unique_grad)
-
-        #     grad_norm = np.linalg.norm(grad, axis=1)
-        #     grad = (grad.T / grad_norm.T).T
-        #     qd_amp = np.linalg.norm(desired_qd)
-        #     desired_qd_unit = desired_qd / qd_amp
-        #     redirection_factor = np.clip(1 - (min_distances / self.collision_proximity), 0, 1)
-        #     modulation_direction = \
-        #         (np.expand_dims(desired_qd_unit, axis=1) @ np.expand_dims((1-redirection_factor), axis=0)) + \
-        #         (grad.T * redirection_factor.T)
-        #     new_desired_qd = np.average(modulation_direction * redirection_factor.T, axis=1) / np.sum(redirection_factor)
-        #     new_desired_qd = new_desired_qd / np.linalg.norm(new_desired_qd) * qd_amp * (0.00001 + 1 - np.min(redirection_factor)) * 0.001
-        #     desired_qd = new_desired_qd
-
-        # output = (is_collided, obstacle_collided, desired_qd)
-
         ### New stuff
         self._jsdf_model.arm_hand_robot.set_system_config(q, syn_type=0)
         distances = self._jsdf_model.whole_arm_inference_with_gradient(self._obstacles, return_grad=False)
@@ -179,8 +103,9 @@ class JS_LDS_OA(JS_LDS_ORIENTED):
             radii = radii[valid_obstacles_idx]
 
         # Check for collisions in general
-        self._proximity_history.append(np.min(min_distances))
-        is_collided = np.min(min_distances) < self.COLLISION_THRESHOLD
+        # If we are realeasing an object we're gonna disregard collision in order to make sure we complete the release
+        # The collision will be caught by the next action and make real tests smoother
+        is_collided = np.min(min_distances) < self.COLLISION_THRESHOLD and not self.let_go
         obstacle_collided = ""
         if is_collided:
             if len(self.obj_grasped) > 0:
@@ -211,7 +136,6 @@ class JS_LDS_OA(JS_LDS_ORIENTED):
             obstacle_names = obstacle_names[valid_obstacles_idx]
             radii = radii[valid_obstacles_idx]
 
-        
         close_idx = np.where(min_distances < self.collision_proximity * 2)[0]
         # close_idx = np.where(min_distances < np.inf)[0]
         if len(close_idx) > 0:
@@ -234,13 +158,9 @@ class JS_LDS_OA(JS_LDS_ORIENTED):
             ref_dir_amp = np.linalg.norm(weighted_ref_dir)
 
             lambda_r = np.cos(np.pi/2 * ref_dir_amp) if ref_dir_amp < 2 else -1
-            # lambda_r = np.min([np.log(-ref_dir_amp + 2) * 10, 1])  if ref_dir_amp < 1 else -1
             if np.dot(weighted_ref_dir, desired_qd) < 0 and ref_dir_amp > 1:
                 lambda_r *= -1
             lambda_e = 1 + np.sin(np.pi/2 * ref_dir_amp) if ref_dir_amp < 1 else 2 * np.sin(np.pi/(2 * ref_dir_amp))
-            # lambda_e = 1 if ref_dir_amp < 1 else 2 * np.sin(np.pi/(2 * ref_dir_amp))
-            # lambda_r = 1
-            # lambda_e = 1
             eigen_vals = np.eye(len(weighted_ref_dir)) * lambda_e
             eigen_vals[0, 0] = lambda_r
 
@@ -447,18 +367,13 @@ class JS_LDS_OA(JS_LDS_ORIENTED):
 
         return ik_res, True
 
-    def compute_motion_health(self, reset=True) -> float:
-        
-        if len(self._proximity_history) > 0 and len(self._condition_numbers) > 0:
-            distance_health = np.min(self._proximity_history) / self._max_prox
-            condition_health = np.min(self._condition_numbers)
-        else:
-            distance_health = -1
-            condition_health = -1
+    def compute_motion_health(self) -> float:
 
-        if reset:
-            self._proximity_history = []
-            self._condition_numbers = []
+        distance_health = np.min(self._proximity_history) / self._max_prox
+        condition_health = np.min(self._condition_numbers)
+
+        self._proximity_history = []
+        self._condition_numbers = []
 
         return distance_health + condition_health
 
@@ -476,7 +391,7 @@ class JS_LDS_OA(JS_LDS_ORIENTED):
             obj_distances = adjusted_distances[np.asarray(self._obstacles_names) == self.obj_grasped]
 
             if len(obj_distances) > 0:
-                contact_points = obj_distances[obj_distances < self.COLLISION_THRESHOLD * 2]
+                contact_points = obj_distances[obj_distances < self.COLLISION_THRESHOLD]
                 if len(contact_points) >= 2:
                     holding = True
 

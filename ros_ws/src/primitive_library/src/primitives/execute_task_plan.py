@@ -12,7 +12,7 @@ import os
 import pickle
 import numpy as np
 
-
+SIMU=False
 class TaskPlanExecutor:
 
     def __init__(self, metadata_file: tp.Optional[str] = None) -> None:
@@ -51,13 +51,15 @@ class TaskPlanExecutor:
         print("About to start simulator")
         self._first_run = True
         self._meta_data_file = metadata_file
-        with contextlib.redirect_stdout(None):
-            self.node = roslaunch.core.Node('llm_simulator', 'llm_simulator_node.py')
-            self.launch = roslaunch.scriptapi.ROSLaunch()
-            self.launch.start()
-            self.process = self.launch.launch(self.node)
-        print("Please wait as the simulator is starting...")
-        time.sleep(10)
+
+        if SIMU:
+            with contextlib.redirect_stdout(None):
+                self.node = roslaunch.core.Node('llm_simulator', 'llm_simulator_node.py')
+                self.launch = roslaunch.scriptapi.ROSLaunch()
+                self.launch.start()
+                self.process = self.launch.launch(self.node)
+            print("Please wait as the simulator is starting...")
+            time.sleep(10)
 
         self.inv_obj_matching_dict = {v: k for k, v in self.object_matching_dict.items()}
 
@@ -67,9 +69,10 @@ class TaskPlanExecutor:
         self.average_score = 0
 
     def __del__(self) -> None:
-        self.process.stop()
-        print("Please wait as the simulator is shutting down...")
-        time.sleep(10)
+        if SIMU:
+            self.process.stop()
+            print("Please wait as the simulator is shutting down...")
+            time.sleep(10)
 
     def reset_simulator(self):
         msg = Bool()
@@ -103,12 +106,12 @@ class TaskPlanExecutor:
             self.reset_simulator()
         else:
             self._first_run = False
-        time.sleep(1)
+        #time.sleep(1)
         reset_controller()
         action_timings = []
         action_health = []
         for action, evaluation in zip(action_plan, evaluation_plan):
-
+            print(f"New action {action}")
             # ====== Act
             action_id = action[0]
             action_function_name = action[1]
@@ -147,15 +150,15 @@ class TaskPlanExecutor:
             action_health.append((action_function_name, object_to_approach, action_arguments, js_lds._condition_numbers, js_lds._proximity_history))
             self.full_execution_time += toc-tic
 
-            if len(js_lds._proximity_history) == 0 or len(js_lds._condition_numbers) == 0:
-                total_score_history.append(-2)  # Minimal score if the movement couldn't execute
-            else:
+            if len(js_lds._condition_numbers) and len(js_lds._proximity_history):
                 total_score_history.append(np.min(js_lds._condition_numbers) + np.min(js_lds._proximity_history)/js_lds._max_prox)
+            else:
+                total_score_history.append(-np.inf)
             self.average_score = np.average(total_score_history)
 
             # ======  Evaluate
-            if action_function_name in ['drop', 'place']:
-                time.sleep(7)  # Give a bit of time for things in the simulator to settle
+            # if action_function_name in ['drop', 'place']:
+            #     time.sleep(7)  # Give a bit of time for things in the simulator to settle
             evaluation_id = evaluation[0]
             evaluation_predicates = evaluation[1]
             evaluation_expected = evaluation[2]
@@ -196,8 +199,8 @@ class TaskPlanExecutor:
                     print(f"{predicate}  NO ", result, "!=", expected)
 
             evaluation_log.append((evaluation_id, tuple(predicate_result), get_motion_health()))
-
-            if not predicate_ok:
+            print("Iteration over")
+            if False:
                 # Save meta data
                 if current_meta_file_name is not None:
                     with open(current_meta_file_name, 'wb') as f:
@@ -211,7 +214,7 @@ class TaskPlanExecutor:
         if current_meta_file_name is not None:
             with open(current_meta_file_name, 'wb') as f:
                 pickle.dump({'timings': action_timings,
-                                'health': action_health,
-                                'evaluation_log': evaluation_log}, f)
+                              'health': action_health,
+                              'evaluation_log': evaluation_log}, f)
         return True, evaluation_log, -1
 

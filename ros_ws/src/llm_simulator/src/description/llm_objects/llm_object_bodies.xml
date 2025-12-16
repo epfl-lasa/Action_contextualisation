@@ -1,8 +1,7 @@
 <llm>
 
     <!-- ################ for champagne glasses #############################-->
-    <!-- 1 - filled -->
-    <body name="champagne_1" pos="0.56 0 1.015"> 
+    <body name="champagne_1" pos="0.56 0 1.015">
         <inertial pos="9.123503975338955e-11 -6.688711864724951e-10 0.14198131249098178" mass="0.001" fullinertia="5.2672950748378754e-05 5.2672949725513476e-05 7.671435979078226e-06 -1.1440655501319162e-12 -3.344826072142586e-13 -6.94323360631693e-12" />
         <geom mesh="champagne" class="visual_support" type="mesh" rgba=".8 .1 .1 0.5"/>
         <geom mesh="champagne_collider" class="obj" type="mesh"/>
@@ -22,7 +21,7 @@
         <freejoint/>
     </body> -->
 
-    <!-- 2 - empty -->
+
     <body name="champagne_2" pos="0.71 -0.42 1.015">
         <inertial pos="9.123503975338955e-11 -6.688711864724951e-10 0.14198131249098178" mass="0.001" fullinertia="5.2672950748378754e-05 5.2672949725513476e-05 7.671435979078226e-06 -1.1440655501319162e-12 -3.344826072142586e-13 -6.94323360631693e-12" />
 
@@ -32,12 +31,12 @@
     </body>
 
     <!-- ################ kitchen rag #############################-->
-    <!-- <body name="rag" pos=".9 0.6 1.06" quat="1 0 0 0">
+    <body name="rag" pos=".9 0.6 1.06" quat="1 0 0 0">
         <composite type="grid" count="9 9 1" spacing="0.02" offset="0 0 0">
         <skin rgba=".6 .1 .6 1" inflate="0.004" subgrid="3"/>
         <geom size=".01"/>
         </composite>
-    </body> -->
+    </body>
 
     <!-- ################ Two apples #############################-->
 
@@ -48,7 +47,6 @@
         <freejoint/>
     </body>
 
-    <!-- alter the x and y coordinates -->
     <body name="eaten_apple" pos="0.8 -0.1 1.07" quat="1 1 0 0">
         <inertial pos="-0.0016480202957852835 -0.002256664593323946 -0.0007355532922551801" mass="0.002" fullinertia="0.00020654858167238498 0.0002167076279555137 0.000209544910164081 1.011183250711457e-06 -6.115403648378643e-07 1.948864069749578e-06" />
         <geom mesh="apple" class="obj" type="mesh"/>
